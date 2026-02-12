@@ -309,9 +309,9 @@ async def handle_text_message(message: Message):
     # Получаем контекст
     context = await get_context(chat_id)
     
-    # Получаем ответ от AI
+    # Получаем ответ от AI с retry-логикой
     try:
-        ai_response = await get_ai_response(context, timeout=30)
+        ai_response = await get_ai_response(context, timeout=30, max_retries=3)
         
         if ai_response:
             # Сохраняем ответ ассистента
@@ -341,27 +341,19 @@ async def handle_text_message(message: Message):
                     "Помни, что Паша тебя любит ❤️"
                 )
         else:
-            # Fallback при ошибке
+            # Fallback при ошибке - все попытки исчерпаны
             fallback_message = (
-                "Извини, у меня сейчас возникли технические сложности. "
-                "Попробуй написать мне чуть позже.\n\n"
+                "Извини, у меня сейчас возникли технические сложности с подключением. "
+                "Попробуй написать мне через минуту.\n\n"
                 "Если тебе нужна срочная поддержка, используй команду /emergency.\n\n"
                 "Помни: Паша тебя любит ❤️"
             )
             await message.answer(fallback_message)
-    except asyncio.TimeoutError:
-        logger.error("Таймаут при получении ответа от AI")
-        fallback_message = (
-            "Извини, ответ занял слишком много времени. "
-            "Попробуй написать мне ещё раз.\n\n"
-            "Помни: Паша тебя любит ❤️"
-        )
-        await message.answer(fallback_message)
     except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения: {e}", exc_info=True)
+        logger.error(f"Критическая ошибка при обработке сообщения: {e}", exc_info=True)
         fallback_message = (
-            "Извини, у меня сейчас возникли технические сложности. "
-            "Попробуй написать мне чуть позже.\n\n"
+            "Извини, произошла непредвиденная ошибка. "
+            "Попробуй написать мне ещё раз.\n\n"
             "Если тебе нужна срочная поддержка, используй команду /emergency.\n\n"
             "Помни: Паша тебя любит ❤️"
         )
