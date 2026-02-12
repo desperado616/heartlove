@@ -61,14 +61,16 @@ FIRST_MESSAGE = """Привет. Я — твой цифровой помощни
 
 async def get_ai_response(
     messages: List[Dict[str, str]], 
-    timeout: int = 30
+    timeout: int = 30,
+    max_retries: int = 3
 ) -> Optional[str]:
     """
-    Получает ответ от AI API через OpenRouter
+    Получает ответ от AI API через OpenRouter с retry-логикой
     
     Args:
         messages: Список сообщений в формате [{"role": "user", "content": "..."}, ...]
         timeout: Таймаут запроса в секундах
+        max_retries: Максимальное количество попыток
         
     Returns:
         Текст ответа или None в случае ошибки
@@ -92,28 +94,55 @@ async def get_ai_response(
         "messages": full_messages,
     }
     
-    try:
-        timeout_obj = aiohttp.ClientTimeout(total=timeout)
-        async with aiohttp.ClientSession(timeout=timeout_obj) as session:
-            logger.info(f"Отправка запроса к AI API (модель: {MODEL})")
-            async with session.post(OPENROUTER_URL, headers=headers, json=payload) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if "choices" in data and len(data["choices"]) > 0:
-                        content = data["choices"][0]["message"]["content"]
-                        logger.info("Успешно получен ответ от AI API")
-                        return content.strip()
+    # Retry-логика для обработки сетевых ошибок
+    for attempt in range(max_retries):
+        try:
+            timeout_obj = aiohttp.ClientTimeout(total=timeout, connect=10)
+            connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+            
+            async with aiohttp.ClientSession(timeout=timeout_obj, connector=connector) as session:
+                logger.info(f"Отправка запроса к AI API (модель: {MODEL}, попытка {attempt + 1}/{max_retries})")
+                
+                async with session.post(OPENROUTER_URL, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if "choices" in data and len(data["choices"]) > 0:
+                            content = data["choices"][0]["message"]["content"]
+                            logger.info("Успешно получен ответ от AI API")
+                            return content.strip()
+                        else:
+                            logger.error(f"Неожиданный формат ответа: {data}")
+                            return None
                     else:
-                        logger.error(f"Неожиданный формат ответа: {data}")
+                        error_text = await response.text()
+                        logger.error(f"Ошибка API: {response.status} - {error_text}")
+                        
+                        # Не повторяем при ошибках клиента (4xx)
+                        if 400 <= response.status < 500:
+                            return None
+                        
+                        # Повторяем при серверных ошибках (5xx)
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                            continue
                         return None
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Ошибка API: {response.status} - {error_text}")
-                    return None
-                    
-    except asyncio.TimeoutError:
-        logger.error(f"Таймаут запроса к API (>{timeout} сек)")
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка при запросе к API: {e}")
-        return None
+                        
+        except asyncio.TimeoutError:
+            logger.error(f"Таймаут запроса к API (>{timeout} сек), попытка {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            return None
+            
+        except (aiohttp.ClientError, ConnectionError, OSError) as e:
+            logger.error(f"Сетевая ошибка при запросе к API: {e}, попытка {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            return None
+            
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при запросе к API: {e}", exc_info=True)
+            return None
+    
+    return None
