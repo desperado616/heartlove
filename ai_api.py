@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "arcee-ai/trinity-large-preview:free"
+MODEL = "qwen/qwen3-vl-235b-a22b-thinking"
 
 # Системный промпт для личного психолога
 SYSTEM_PROMPT = """Ты — опытный клинический психолог женского рода с 15-летним стажем, специализирующаяся на отношениях и эмоциональном благополучии. Ты работаешь с одной женщиной (твоей постоянной клиенткой), которая состоит в отношениях с мужчиной по имени Паша. Твоя задача — мягко поддерживать её эмоциональное состояние, помогать осознавать паттерны в отношениях и укреплять её самооценку.
@@ -146,3 +146,4 @@ async def get_ai_response(
             return None
     
     return None
+
